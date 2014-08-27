@@ -101,6 +101,10 @@ int main(int argc, char** argv) {
     
     glfwSwapBuffers();    
     running = !glfwGetKey(GLFW_KEY_ESC) && glfwGetWindowParam(GLFW_OPENED);
+    if (glfwGetKey(76)) {
+        setup(argv[1]);
+    }
+    glfwSleep(.1);
   }
   
   glfwTerminate();

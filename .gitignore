@@ -1,3 +1,11 @@
 shaderquad
 *.*~
 
+/shaders/GPATH
+/shaders/GRTAGS
+/shaders/GSYMS
+/shaders/GTAGS
+/src/GPATH
+/src/GRTAGS
+/src/GSYMS
+/src/GTAGS
