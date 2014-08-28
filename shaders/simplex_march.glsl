@@ -37,7 +37,7 @@ vec4 taylorInvSqrt(vec4 r)
 }
 
 /* return distance */
-float snoise(vec3 v, vec3 d) { 
+float snoise(vec3 v, vec3 d, out vec4 G) { 
   const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
   const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
 
@@ -105,39 +105,42 @@ float snoise(vec3 v, vec3 d) {
   p3 *= norm.w;
 
 // Mix final noise value
-  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-  m = m * m;
+  G = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  vec4 m = G * G;
   float value =  42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
                                 dot(p2,x2), dot(p3,x3) ) );
 
 
-  if (value < -1.5) return 0.0f;
+  /* if (value < -10.5) return 0.0f; */
+  /* start with brute force */
 
   /* use gradient to estimate distance */
+  float alpha = dot(G, vec4(d, 0));
+  float dist = -value/alpha;
+  /* if (dist < 0) return .01; */
+  return dist;
 
-  /* start with brute force */
-  return min(0.1, .7 * dot(m, vec4(d, 0)));
-  /* return .1; */
   }
 
 
 
 void main() {
   float x = (gl_FragCoord.x) / 400.0 - 1.0;
-  float y = (gl_FragCoord.y) / 300.0 - 1.0;
+  float y = (gl_FragCoord.y) / 400.0 - 1.0;
   float t = fs_in.time;
 
-  vec3 v0 = vec3(5.0 * x, y, 0); // ray intersection with view plane
-  vec3 p = vec3(0, 0, -2); // camera position
+  vec3 v0 = vec3(x, y, 0); // ray intersection with view plane
 
   /* movde */
-  vec3 movement = t * vec3(0,0,.1);
+  vec3 movement = t * vec3(0,0,-1);
+
+
   v0 += movement;
-  p += movement;
+  vec3 p = v0 - vec3(0,0,2); // camera position
+
   
   vec3 vd = normalize(v0 - p); // ray direction
 
-  vec3 lightPos = vec3(70 * cos(fs_in.time * 1.7), 70 * sin(fs_in.time * 0.35), 70 * sin(fs_in.time));
 
   // epsilon vectors used for calculating surface normals
   float e = 0.001;    
@@ -153,47 +156,55 @@ void main() {
   /* color =  10 * vec4(1,1,1,1) * snoise(v0, vd); */
 
   
-  p += vd;
+  p = v0;
   float s = 0;
-  float maxstep = 80;
-  while (!hit && p.z < maxZ && s < maxstep) {
-      float d = snoise(p, vd);
-    if (d <= 0.00005) {
-      hit = true;
-    } else {
-      p += vd * d;
-      s += 1;
+  float t_min = 2.0;
+  float dt = 2.0;
+  vec4 G;
+  float maxstep = 40;
+  while (!hit && s < maxstep) {
+      float d = snoise(p, vd, G);
+      if (abs(d) <= 0.001 || (s==0 && d < 0) ) {
+          hit = true;
+      } else {
+          if (abs(d) > .05)
+              d = sign(d) * .05;
+          if (abs(d) < .0001)
+              d = sign(d) * .0001;
+          dt += d;
+          p = v0 + vd * .15 * dt;
+          s += 1;
 
-    }
+      }
   }
 
 
-  if (s < 1) color = vec4(1.0, 0, 0, 1);
-  else if (s < 2) color = vec4(0, 1, 0, 1);
-  else if (s < 3) color = vec4(0, 0, 1, 1);
-  else
-  color = (1.0 - s/maxstep) * vec4(1, 1,1 ,1);
+  if (s < 1) {
+      color = vec4(.09, .09, .10, 1);
+  } else  {
+      /* color = (1.0 - s/maxstep) * vec4(0, 1,1 ,1); // + p.z / maxZ *  vec4(1, 0,0 ,1); */
+
+      /* ambient */
+      color = vec4(.2, .3, .2, 1.);
+
+      if (true) {                  /* z term ~ depth */
+          float dz = p.z - v0.z;
+          float fog = clamp(pow(1.2 * dz/ 2.0, 2), 0,1);
+          color += vec4(1.0) * (fog);
+      }
+      vec3 ld = normalize(vec3(-1,1,0));
+      float lambertian = clamp(dot(ld, G.xyz), 0, 1);
+          
+      color.xyz += vec3(.9, .9, .3) * lambertian;
+
+      /* spcular */
+      float specular = pow(clamp(dot(vd, reflect(ld, G.xyz)), 0, 1), 2) * 23.0;
+      color.xyz += vec3(1,1,.3) * specular;
+
+      /* color = vec4(G.xyz,1.0); */
+  }
   
-  color  = vec4(p,1);
-
-
-  /* // shading  */
-  /* if (hit) { */
-
-  /*   /\* vec3 n = normalize(vec3( *\/ */
-  /*   /\*     		    dist(p + dx, spherePos) - dist(p - dx, spherePos), *\/ */
-  /*   /\*     		    dist(p + dy, spherePos) - dist(p - dy, spherePos), *\/ */
-  /*   /\*     		    dist(p + dz, spherePos) - dist(p - dz, spherePos) *\/ */
-  /*   /\*     		    )); *\/ */
-
-  /*   /\* float light = doLight(vd, p, n, lightPos); *\/ */
-
-  /*   /\* float fog = clamp(pow(1.1 * p.z / maxZ, 2), 0, 1); *\/ */
-  /*   /\* vec3 fogcol = vec3(0.2, 0.2, 0.2); *\/ */
-
-  /*   /\* color = vec4(mix(vec3(light), fogcol, fog), 1); *\/ */
-  /* } else { */
-  /*   color = vec4(0.2, 0.2, 0.2, 1); */
-  /* } */
+  /* color  = p.z / maxZ *  vec4(1, 1,1 ,1); */
+  /* color = vec4(p, 1.0); */
 
 }
