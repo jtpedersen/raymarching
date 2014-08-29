@@ -8,6 +8,14 @@ out vec4 color;
 
 float thresshold = 0.0f;        /* MAKE UNIFORM */
 
+// epsilon vectors used for calculating surface normals
+float e = 0.001;    
+vec3 dx = vec3(e, 0, 0);
+vec3 dy = vec3(0, e, 0);
+vec3 dz = vec3(0, 0, e);
+
+
+
 //
 // Description : Array and textureless GLSL 2D/3D/4D simplex 
 //               noise functions.
@@ -36,8 +44,8 @@ vec4 taylorInvSqrt(vec4 r)
   return 1.79284291400159 - 0.85373472095314 * r;
 }
 
-/* return distance */
-float snoise(vec3 v, vec3 d, out vec4 G) { 
+float snoise(vec3 v)
+  { 
   const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
   const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
 
@@ -105,24 +113,18 @@ float snoise(vec3 v, vec3 d, out vec4 G) {
   p3 *= norm.w;
 
 // Mix final noise value
-  G = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-  vec4 m = G * G;
-  float value =  42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
                                 dot(p2,x2), dot(p3,x3) ) );
-
-
-  /* if (value < -10.5) return 0.0f; */
-  /* start with brute force */
-
-  /* use gradient to estimate distance */
-  float alpha = dot(G, vec4(d, 0));
-  float dist = -value/alpha;
-  /* if (dist < 0) return .01; */
-  return dist;
-
   }
 
+vec3 gradient(vec3 p) {
+    return normalize(vec3(snoise(p+dx) - snoise(p-dx),
+                          snoise(p+dy) - snoise(p-dy),
+                          snoise(p+dz) - snoise(p-dz)));
 
+}
 
 void main() {
   float x = (gl_FragCoord.x) / 400.0 - 1.0;
@@ -137,69 +139,66 @@ void main() {
 
   v0 += movement;
   vec3 p = v0 - vec3(0,0,2); // camera position
-
-  
   vec3 vd = normalize(v0 - p); // ray direction
-
-
-  // epsilon vectors used for calculating surface normals
-  float e = 0.001;    
-  vec3 dx = vec3(e, 0, 0);
-  vec3 dy = vec3(0, e, 0);
-  vec3 dz = vec3(0, 0, e);
-
 
   // ray marching loop
   bool hit = false;
   float maxZ = 3000.0;
-  
-  /* color =  10 * vec4(1,1,1,1) * snoise(v0, vd); */
-
-  
-  p = v0;
   float s = 0;
-  float t_min = 2.0;
-  float dt = 2.0;
-  vec4 G;
-  float maxstep = 40;
+  float dt = 0.0;
+  vec3 g;
+  float maxstep = 30;
+  bool inside = false;
   while (!hit && s < maxstep) {
-      float d = snoise(p, vd, G);
-      if (abs(d) <= 0.001 || (s==0 && d < 0) ) {
-          hit = true;
+      p = v0 + vd * dt;
+      float n = snoise(p);
+      if (n < thresshold ) {
+          if(s == 0 )
+              inside = true;
+          hit = !inside;
       } else {
-          if (abs(d) > .05)
-              d = sign(d) * .05;
-          if (abs(d) < .0001)
-              d = sign(d) * .0001;
-          dt += d;
-          p = v0 + vd * .15 * dt;
-          s += 1;
-
+          inside = false;
       }
-  }
 
+      /* g = gradient(p); */
+      /* float d = dot(vd, g); */
+      /* if (abs(d) < .001) */
+      /*     d = sign(d) * 0.001; */
+      /* if(abs(d) > 2) */
+      /*     d = sign(d) * 2; */
+      /* if (d < 0) d = .03; */
+      /* d = clamp(d, 0.001, .1); */
+      /* /\* float d = .1; *\/ */
+      /* dt += d; */
+
+      dt += .1;
+      s += 1;
+  }
+  color = vec4(0.0);
 
   if (s < 1) {
       color = vec4(.09, .09, .10, 1);
-  } else  {
+  } else  if (hit) {
       /* color = (1.0 - s/maxstep) * vec4(0, 1,1 ,1); // + p.z / maxZ *  vec4(1, 0,0 ,1); */
 
       /* ambient */
       color = vec4(.2, .3, .2, 1.);
+      g = gradient(p);
 
-      if (true) {                  /* z term ~ depth */
+      if (false) {                  /* z term ~ depth */
           float dz = p.z - v0.z;
           float fog = clamp(pow(1.2 * dz/ 2.0, 2), 0,1);
           color += vec4(1.0) * (fog);
       }
       vec3 ld = normalize(vec3(-1,1,0));
-      float lambertian = clamp(dot(ld, G.xyz), 0, 1);
+      float lambertian = clamp(dot(ld, g), 0, 1);
           
       color.xyz += vec3(.9, .9, .3) * lambertian;
+      /* color=vec4(g, 1.0); */
 
       /* spcular */
-      float specular = pow(clamp(dot(vd, reflect(ld, G.xyz)), 0, 1), 2) * 23.0;
-      color.xyz += vec3(1,1,.3) * specular;
+      float specular = pow(clamp(dot(vd, reflect(ld, g)), 0, 1), 2) * 1.0;
+      /* color.xyz += vec3(1,1,.3) * specular; */
 
       /* color = vec4(G.xyz,1.0); */
   }
