@@ -6,7 +6,7 @@ in VS_OUT {
 
 out vec4 color;
 
-float thresshold = 0.0f;        /* MAKE UNIFORM */
+float thresshold = -.50f;        /* MAKE UNIFORM */
 
 // epsilon vectors used for calculating surface normals
 float e = 0.001;    
@@ -44,8 +44,7 @@ vec4 taylorInvSqrt(vec4 r)
   return 1.79284291400159 - 0.85373472095314 * r;
 }
 
-float snoise(vec3 v)
-  { 
+float snoise(vec3 v)  { 
   const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
   const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
 
@@ -120,11 +119,14 @@ float snoise(vec3 v)
 
   return n;
   }
+float noise(vec3 v) {
+    return snoise(v) + .01 *  snoise(v*20) + .26 * snoise(v*2);
 
+}
 vec3 gradient(vec3 p) {
-    return normalize(vec3(snoise(p+dx) - snoise(p-dx),
-                          snoise(p+dy) - snoise(p-dy),
-                          snoise(p+dz) - snoise(p-dz)));
+    return normalize(vec3(noise(p+dx) - noise(p-dx),
+                          noise(p+dy) - noise(p-dy),
+                          noise(p+dz) - noise(p-dz)));
 }
 
 vec3  bisect(vec3 p, vec3 d, float tmin, float tmax, int n) {
@@ -133,7 +135,7 @@ vec3  bisect(vec3 p, vec3 d, float tmin, float tmax, int n) {
     for(int i = 0; i < n; i++) {
         m = (tmax + tmin) * .5f;
         mp = p + d * m;
-        float v = snoise(mp);
+        float v = noise(mp);
         if (v < thresshold) {
             tmax = m;
         } else {
@@ -151,7 +153,7 @@ void main() {
   vec3 v0 = vec3(3*x, 2*y, 0); // ray intersection with view plane
 
   /* move */
-  vec3 movement = t * vec3(0,0,-1);
+  vec3 movement = 2* t * vec3(0,0,-1);
   v0 += movement;
   vec3 p = v0 - vec3(0,0,2); // camera position
   vec3 vd = normalize(p - v0); // ray direction
@@ -162,11 +164,11 @@ void main() {
   float s = 0;
   float dt = 0.0;
   vec3 g;
-  float maxstep = 30;
+  float maxstep = 20;
   float ss = .08;
   while (!hit && s < maxstep) {
       p = v0 + vd * dt;
-      float n = snoise(p);
+      float n = noise(p);
       if (n < thresshold ) {
           hit = true;
           /* refine */
@@ -187,10 +189,10 @@ void main() {
   }
 
   if (s < 1) {
-      color = vec4(.09, .09, .10, 1);
+      color = vec4(.2, .2, .10, 1);
   } else  if (hit) {
       /* ambient */
-      color = vec4(.2, .3, .2, 1.);
+      color += vec4(.2, .3, .2, 1.);
       g = gradient(p);
 
       vec3 ld = normalize(vec3(-1,1,0));
