@@ -115,15 +115,32 @@ float snoise(vec3 v)
 // Mix final noise value
   vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
   m = m * m;
-  return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
+  float n = 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
                                 dot(p2,x2), dot(p3,x3) ) );
+
+  return n;
   }
 
 vec3 gradient(vec3 p) {
     return normalize(vec3(snoise(p+dx) - snoise(p-dx),
                           snoise(p+dy) - snoise(p-dy),
                           snoise(p+dz) - snoise(p-dz)));
+}
 
+vec3  bisect(vec3 p, vec3 d, float tmin, float tmax, int n) {
+    float m;
+    vec3 mp = p;
+    for(int i = 0; i < n; i++) {
+        m = (tmax + tmin) * .5f;
+        mp = p + d * m;
+        float v = snoise(mp);
+        if (v < thresshold) {
+            tmax = m;
+        } else {
+            tmin = m;
+        }
+    }
+    return mp;
 }
 
 void main() {
@@ -131,15 +148,13 @@ void main() {
   float y = (gl_FragCoord.y) / 400.0 - 1.0;
   float t = fs_in.time;
 
-  vec3 v0 = vec3(x, y, 0); // ray intersection with view plane
+  vec3 v0 = vec3(3*x, 2*y, 0); // ray intersection with view plane
 
-  /* movde */
+  /* move */
   vec3 movement = t * vec3(0,0,-1);
-
-
   v0 += movement;
   vec3 p = v0 - vec3(0,0,2); // camera position
-  vec3 vd = normalize(v0 - p); // ray direction
+  vec3 vd = normalize(p - v0); // ray direction
 
   // ray marching loop
   bool hit = false;
@@ -148,48 +163,36 @@ void main() {
   float dt = 0.0;
   vec3 g;
   float maxstep = 30;
-  bool inside = false;
+  float ss = .08;
   while (!hit && s < maxstep) {
       p = v0 + vd * dt;
       float n = snoise(p);
       if (n < thresshold ) {
-          if(s == 0 )
-              inside = true;
-          hit = !inside;
-      } else {
-          inside = false;
-      }
-
-      /* g = gradient(p); */
-      /* float d = dot(vd, g); */
-      /* if (abs(d) < .001) */
-      /*     d = sign(d) * 0.001; */
-      /* if(abs(d) > 2) */
-      /*     d = sign(d) * 2; */
-      /* if (d < 0) d = .03; */
-      /* d = clamp(d, 0.001, .1); */
-      /* /\* float d = .1; *\/ */
-      /* dt += d; */
-
-      dt += .1;
+          hit = true;
+          /* refine */
+          p = bisect(p, vd, -ss, 0.0f, 5);
+          break;
+      } 
+      dt += ss;
       s += 1;
   }
+
+  
   color = vec4(0.0);
+
+  if (true) {                  /* z term ~ depth */
+      float dz = p.z - v0.z;
+      float fog = clamp(pow(1.2 * dz/ (ss * maxstep), 2), 0,1);
+      color += vec4(1.0) * (fog);
+  }
 
   if (s < 1) {
       color = vec4(.09, .09, .10, 1);
   } else  if (hit) {
-      /* color = (1.0 - s/maxstep) * vec4(0, 1,1 ,1); // + p.z / maxZ *  vec4(1, 0,0 ,1); */
-
       /* ambient */
       color = vec4(.2, .3, .2, 1.);
       g = gradient(p);
 
-      if (false) {                  /* z term ~ depth */
-          float dz = p.z - v0.z;
-          float fog = clamp(pow(1.2 * dz/ 2.0, 2), 0,1);
-          color += vec4(1.0) * (fog);
-      }
       vec3 ld = normalize(vec3(-1,1,0));
       float lambertian = clamp(dot(ld, g), 0, 1);
           
@@ -197,13 +200,9 @@ void main() {
       /* color=vec4(g, 1.0); */
 
       /* spcular */
-      float specular = pow(clamp(dot(vd, reflect(ld, g)), 0, 1), 2) * 1.0;
-      /* color.xyz += vec3(1,1,.3) * specular; */
+      float specular = pow(clamp(dot(vd, reflect(ld, g)), 0, 1), 6) * 1.0;
+      color.xyz += vec3(.7,.8,.3) * specular;
 
-      /* color = vec4(G.xyz,1.0); */
   }
-  
-  /* color  = p.z / maxZ *  vec4(1, 1,1 ,1); */
-  /* color = vec4(p, 1.0); */
 
 }
